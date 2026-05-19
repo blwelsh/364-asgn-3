@@ -4,24 +4,13 @@ import struct
 import datetime
 import threading
 import time
-# import matplotlib.pyplot as plt
 
-# for graph
-# rtt_samples = []
-# cwnd_samples = []
-# retranmissions_samples = []
-# retranmissions_samples.append(0)
-# rtt_count = 0
-# re_count = 0
 
 # initialize socket
 soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 host = "localhost"
 port = 5000
-
-lock = threading.Lock()
-
 
 # read 1MB file
 
@@ -32,20 +21,9 @@ def calc_checksum(databytes):
     res = sum % 65535
     return res
 
-# congestion control mechanisms
-
-# slow start:
-
-# def congestion_control()
-
-# congestion avoidance:
-
-# fast retransmit
-
-# send each chunk over UDP, with sequence number and checksum in the packet header
-
-# dictionary that maps unreceived ACKs to time sent
-unreceived_acks = {}
+# time of most recently received ACK
+recent_ack_time = datetime.datetime.now()
+recent_ack = 0
 
 def send_chunk(chunk, sequence_num, checksum):
     # 4 byte sequence num
@@ -58,122 +36,90 @@ def send_chunk(chunk, sequence_num, checksum):
     return
 
 # handle timeouts:
-
 timeout = 0.5
 
 # for chunks that need to be retransmitted
-retransmit = []
-
-# most recently received ACK
-next_sequence = 0
 
 send_base = 0
 next_to_send = 0
 cwnd = 1
-# rtt_samples.append(0)
-# cwnd_samples.append(cwnd)
 
+# ssthresh starts at infinity
 ssthresh = float("inf")
+
+# for fast retransmit
 dup_ack_count = 0
+
+# last ACK num received
 last_ack = 0
 
 
 # thread for receiving acks from server
 def handle_ack():
-    global send_base, cwnd, ssthresh, dup_ack_count, last_ack, next_to_send, rtt_count, re_count
+    global send_base, cwnd, ssthresh, dup_ack_count, last_ack, next_to_send, recent_ack_time, recent_ack
 
     while True:
         # receieve ACKs
-        retransmit_packet = None
         message, address = soc.recvfrom(4)
 
         ack = struct.unpack("i", message)[0]
 
-        with lock:
 
-            if not isinstance(ack, int):
-                print("error on type of ACK received")
-                continue
+        if not isinstance(ack, int):
+            print("error on type of ACK received")
+            continue
 
-            if ack > send_base:
-                new_ack = ack - send_base
-                for seq in range(send_base, ack):
-                    unreceived_acks.pop(seq, None)
+        if ack > send_base:
+            recent_ack_time = datetime.datetime.now()
+            recent_ack = ack
+            new_ack = ack - send_base
 
-                send_base = ack
-                last_ack = ack
+            send_base = ack
+            last_ack = ack
+            dup_ack_count = 0
+
+            # slow start:
+            if cwnd < ssthresh:
+                cwnd += new_ack
+            # congestion avoidance:
+            else:
+                cwnd += new_ack / cwnd
+
+
+        # duplicate ack/fast retransmit
+        elif ack == last_ack:
+            dup_ack_count += 1
+
+            if dup_ack_count >= 3:
                 dup_ack_count = 0
+                missing_packet = ack
+                print("Fast retransmit on packet " + str(missing_packet))
 
-                # slow start:
-                if cwnd < ssthresh:
-                    cwnd += new_ack
-                # congestion avoidance:
-                else:
-                    cwnd += new_ack / cwnd
+                ssthresh = max(cwnd / 2, 1)
+                cwnd = ssthresh + 3
 
-                # rtt_count += 1
-                # rtt_samples.append(rtt_count)
-                # cwnd_samples.append(cwnd)
+                send_chunk(chunks[ack], ack, calc_checksum(chunks[ack]))
 
-            # duplicate ack/fast retransmit
-            elif ack == last_ack:
-                dup_ack_count += 1
-
-                if dup_ack_count >= 3:
-                    missing_packet = ack
-                    print("Fast retransmit on packet " + str(missing_packet))
-
-                    retransmit_packet = ack
-                    ssthresh = max(cwnd / 2, 1)
-                    cwnd = ssthresh + 3
-
-                    # retranmissions_samples.append(re_count)
-                    # re_count += 1
-                    # rtt_count += 1
-                    # rtt_samples.append(rtt_count)
-                    # cwnd_samples.append(cwnd)
-
-        if retransmit_packet is not None:
-            send_chunk(chunks[retransmit_packet], retransmit_packet, calc_checksum(chunks[retransmit_packet]))
-
-        # we've received the ACK and no longer need to worry about the chunk. yay!
 
 def handle_timeout():
-    global cwnd, ssthresh, next_to_send, rtt_count, re_count
+    global cwnd, ssthresh, next_to_send, recent_ack_time
 
     while True:
-        to_retransmit = None
+        now = datetime.datetime.now()
 
-        with lock:
-            now = datetime.datetime.now()
+        if (now - recent_ack_time).total_seconds() > timeout:
+            ssthresh = max(cwnd / 2, 1)
+            cwnd = 1
 
-            if send_base in unreceived_acks:
-                time_sent = unreceived_acks[send_base]
+            recent_ack_time = datetime.datetime.now()
 
-                if (now - time_sent).total_seconds() > timeout:
+            if send_base < total_chunks:
+                print("Timeout. retransmitting packet #" + str(send_base))
+                send_chunk(chunks[send_base], send_base, calc_checksum(chunks[send_base]))
 
-                    to_retransmit = send_base
-
-                    unreceived_acks[send_base] = datetime.datetime.now()
-
-                    ssthresh = max(cwnd / 2, 1)
-                    cwnd = 1
-
-                    # retranmissions_samples.append(re_count)
-                    # re_count += 1
-                    # rtt_count += 1
-                    # rtt_samples.append(rtt_count)
-                    # cwnd_samples.append(cwnd)
-
-
-                    next_to_send = send_base
-
-        if to_retransmit is not None:
-            print("Timeout. retransmitting packet #" + str(to_retransmit))
-            send_chunk(chunks[to_retransmit], to_retransmit, calc_checksum(chunks[to_retransmit]))
+            next_to_send = send_base
 
         time.sleep(0.1)
-
 
 with open("gistfile1.txt", "rb") as file:
 
@@ -196,20 +142,18 @@ with open("gistfile1.txt", "rb") as file:
     # congestion control
     remaining_packets = len(chunks)
 
-
     base_chunk = 0
     seq = None
     while (send_base < total_chunks):
         packets_to_send = []
 
-        with lock:
-            # send a chunk for each cwnd
-            # int(cwnd) because it can be a float
-            while next_to_send < total_chunks and next_to_send < send_base + int(cwnd):
-                unreceived_acks[next_to_send] = datetime.datetime.now()
-                seq = next_to_send
-                next_to_send += 1
-                packets_to_send.append(seq)
+        # send a chunk for each cwnd
+        # int(cwnd) because it can be a float
+        while next_to_send < total_chunks and next_to_send < send_base + int(cwnd):
+            # unreceived_acks[next_to_send] = datetime.datetime.now()
+            seq = next_to_send
+            next_to_send += 1
+            packets_to_send.append(seq)
 
         for seq in packets_to_send:
             send_chunk(chunks[seq], seq, calc_checksum(chunks[seq]))
@@ -218,10 +162,3 @@ with open("gistfile1.txt", "rb") as file:
         time.sleep(0.01)
 
 
-# plt.plot(rtt_samples, retranmissions_samples)
-
-# plt.xlabel("RTT")
-# plt.ylabel("Retransmissions")
-# plt.title("Retransmissions vs RTT")
-# plt.grid(True)
-# plt.show()

@@ -36,17 +36,17 @@ soc.settimeout(0.01)
 while True:
     # note: should receieve 1032 bytes
 
-    header_format = "IH1024s"
-    packet_size = struct.calcsize(header_format)
+    header_format = "iH1024s"
+    # packet_size = struct.calcsize(header_format)
 
     try:
-        data, address = soc.recvfrom(packet_size)
+        data, address = soc.recvfrom(1032)
     except socket.timeout:
         data = None
 
     if data is not None:
         # print(data)
-        unpacked = struct.unpack("IH1024s", data)
+        unpacked = struct.unpack("iH1024s", data)
 
         sequence_num = unpacked[0]
         checksum = unpacked[1]
@@ -64,7 +64,6 @@ while True:
             print("Dropping packet: " + str(sequence_num))
             continue
 
-
         # first packet of window
         if (sequence_num == expected_seq):
             # 4. write chunk to output file
@@ -81,8 +80,6 @@ while True:
             message = struct.pack("i", expected_seq)
             soc.sendto(message, address)
 
-
-        # checking to see if it's the first packet in window and then applying RTT
     if ack_pending and time.time() - batch_start_time >= 0.1:
         # 2. Send ACKs back to client, containing sequence_num + 1
         message = struct.pack("i", expected_seq)
