@@ -54,16 +54,14 @@ while True:
 
         # 1. Validate checksum
         if not (calc_checksum(chunk) == checksum):
-            print(calc_checksum(chunk))
-            print(checksum)
-            print("discarding packet... :(")
+            print("discarding packet due to faulty checksum")
             continue
 
         # simulate packet loss
-        loss = random.randint(1, 100)
+        loss = random.randint(1, 10)
         if loss == 1:
             # dropping packet :(
-            print("Dropping packet :(" + str(sequence_num))
+            print("Dropping packet: " + str(sequence_num))
             continue
 
 
@@ -79,7 +77,7 @@ while True:
                 batch_start_time = time.time()
                 ack_pending = True
         else:
-            print("out of order packet :(")
+            print("out of order packet - packet receieved: " + str(sequence_num) + " expected: " + str(expected_seq))
             message = struct.pack("i", expected_seq)
             soc.sendto(message, address)
 

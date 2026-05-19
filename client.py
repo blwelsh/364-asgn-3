@@ -90,10 +90,9 @@ def handle_ack():
         ack = struct.unpack("i", message)[0]
 
         with lock:
-            print("received new ack :) from", ack)
 
             if not isinstance(ack, int):
-                print("ack not an int... :(")
+                print("error on type of ACK received")
                 continue
 
             if ack > send_base:
@@ -122,7 +121,7 @@ def handle_ack():
 
                 if dup_ack_count >= 3:
                     missing_packet = ack
-                    print("Fast retransmit " + str(missing_packet))
+                    print("Fast retransmit on packet " + str(missing_packet))
 
                     retransmit_packet = ack
                     ssthresh = max(cwnd / 2, 1)
@@ -170,7 +169,7 @@ def handle_timeout():
                     next_to_send = send_base
 
         if to_retransmit is not None:
-            print("Timeout. retransmitting packet" + str(to_retransmit))
+            print("Timeout. retransmitting packet #" + str(to_retransmit))
             send_chunk(chunks[to_retransmit], to_retransmit, calc_checksum(chunks[to_retransmit]))
 
         time.sleep(0.1)
