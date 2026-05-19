@@ -60,8 +60,8 @@ while True:
             continue
 
         # simulate packet loss
-        loss = random.randint(1, 10)
-        if loss == 10:
+        loss = random.randint(1, 100)
+        if loss == 1:
             # dropping packet :(
             print("Dropping packet :(" + str(sequence_num))
             continue
